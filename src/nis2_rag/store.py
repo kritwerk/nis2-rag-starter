@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol, cast
 
 import structlog
 
@@ -48,7 +48,7 @@ class ChromaStore:
         )
         self._collection = self._client.get_or_create_collection(
             name=collection_name,
-            embedding_function=ef,
+            embedding_function=ef,  # type: ignore[arg-type]
             metadata={"hnsw:space": "cosine"},
         )
 
@@ -57,15 +57,21 @@ class ChromaStore:
             return
         ids = [f"{c.source}::{c.chunk_index}" for c in chunks]
         documents = [c.text for c in chunks]
-        metadatas = [{"source": c.source, "page": c.page} for c in chunks]
-        self._collection.upsert(ids=ids, documents=documents, metadatas=metadatas)
+        metadatas: list[dict[str, Any]] = [
+            {"source": c.source, "page": c.page} for c in chunks
+        ]
+        self._collection.upsert(
+            ids=ids,
+            documents=documents,
+            metadatas=cast(Any, metadatas),
+        )
         log.info("chroma.upsert", count=len(chunks))
 
     def query(self, text: str, *, top_k: int) -> list[Hit]:
-        result = self._collection.query(query_texts=[text], n_results=top_k)
-        docs = result.get("documents", [[]])[0]
-        metas = result.get("metadatas", [[]])[0]
-        distances = result.get("distances", [[]])[0]
+        result = cast(Any, self._collection.query(query_texts=[text], n_results=top_k))
+        docs = (result.get("documents") or [[]])[0]
+        metas = (result.get("metadatas") or [[]])[0]
+        distances = (result.get("distances") or [[]])[0]
         hits: list[Hit] = []
         for doc, meta, dist in zip(docs, metas, distances, strict=False):
             hits.append(
